@@ -12,6 +12,7 @@ enum Expr {
 
 enum Error {
     UnexpectedToken(TokenKind, TokenKind),
+    UnexpectedEOF(TokenKind),
 }
 
 impl Expr {
@@ -35,10 +36,7 @@ impl Expr {
                                 Err(Error::UnexpectedToken(TokenKind::CloseParen, t.kind))
                             }
                         } else {
-                            Err(Error::UnexpectedToken(
-                                TokenKind::CloseParen,
-                                TokenKind::End,
-                            ))
+                            Err(Error::UnexpectedEOF(TokenKind::CloseParen))
                         }
                     } else {
                         Ok(Expr::Sym(name.text))
@@ -47,7 +45,7 @@ impl Expr {
                 _ => Err(Error::UnexpectedToken(TokenKind::Sym, name.kind)),
             }
         } else {
-            Err(Error::UnexpectedToken(TokenKind::Sym, TokenKind::End))
+            Err(Error::UnexpectedEOF(TokenKind::Sym))
         }
     }
 
@@ -237,7 +235,6 @@ enum TokenKind {
     CloseParen,
     Comma,
     Equals,
-    End,
 }
 
 impl fmt::Display for TokenKind {
@@ -249,7 +246,6 @@ impl fmt::Display for TokenKind {
             CloseParen => write!(f, "')'"),
             Comma => write!(f, "','"),
             Equals => write!(f, "'='"),
-            End => write!(f, "end of input"),
         }
     }
 }
@@ -335,6 +331,9 @@ fn main() {
             Ok(expr) => println!("{}", swap.apply_all(&expr)),
             Err(Error::UnexpectedToken(expected, actual)) => {
                 println!("ERROR: expected {} but got {}", expected, actual)
+            }
+            Err(Error::UnexpectedEOF(expected)) => {
+                println!("ERROR: expected {} but got nothing", expected)
             }
         }
     }
