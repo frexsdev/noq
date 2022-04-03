@@ -1,7 +1,7 @@
-#[allow(unused_macros)]
 use std::collections::HashMap;
 use std::fmt;
-use std::io::{stdin, stdout, Write};
+use std::io::Write;
+use std::io::{stdin, stdout};
 use std::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,36 +10,46 @@ enum Expr {
     Fun(String, Vec<Expr>),
 }
 
+enum Error {
+    UnexpectedToken(TokenKind, TokenKind),
+    UnexpectedEOF(TokenKind),
+}
+
 impl Expr {
-    fn parse_peekable(lexer: &mut Peekable<impl Iterator<Item = Token>>) -> Self {
+    fn parse_peekable(lexer: &mut Peekable<impl Iterator<Item = Token>>) -> Result<Self, Error> {
         if let Some(name) = lexer.next() {
             match name.kind {
                 TokenKind::Sym => {
                     if let Some(_) = lexer.next_if(|t| t.kind == TokenKind::OpenParen) {
                         let mut args = Vec::new();
                         if let Some(_) = lexer.next_if(|t| t.kind == TokenKind::CloseParen) {
-                            return Expr::Fun(name.text, args);
+                            return Ok(Expr::Fun(name.text, args));
                         }
-                        args.push(Self::parse_peekable(lexer));
+                        args.push(Self::parse_peekable(lexer)?);
                         while let Some(_) = lexer.next_if(|t| t.kind == TokenKind::Comma) {
-                            args.push(Self::parse_peekable(lexer));
+                            args.push(Self::parse_peekable(lexer)?);
                         }
-                        if lexer.next_if(|t| t.kind == TokenKind::CloseParen).is_none() {
-                            todo!("Expected close paren");
+                        if let Some(t) = lexer.peek() {
+                            if t.kind == TokenKind::CloseParen {
+                                Ok(Expr::Fun(name.text, args))
+                            } else {
+                                Err(Error::UnexpectedToken(TokenKind::CloseParen, t.kind))
+                            }
+                        } else {
+                            Err(Error::UnexpectedEOF(TokenKind::CloseParen))
                         }
-                        Expr::Fun(name.text, args)
                     } else {
-                        Expr::Sym(name.text)
+                        Ok(Expr::Sym(name.text))
                     }
                 }
-                _ => todo!("Report unexpected symbol"),
+                _ => Err(Error::UnexpectedToken(TokenKind::Sym, name.kind)),
             }
         } else {
-            todo!("Report EOF error")
+            Err(Error::UnexpectedEOF(TokenKind::Sym))
         }
     }
 
-    fn parse(lexer: impl Iterator<Item = Token>) -> Self {
+    fn parse(lexer: &mut impl Iterator<Item = Token>) -> Result<Self, Error> {
         Self::parse_peekable(&mut lexer.peekable())
     }
 }
@@ -159,13 +169,10 @@ fn pattern_match(pattern: &Expr, value: &Expr) -> Option<Bindings> {
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! fun_args {
-    () => {
-        vec![]
-    };
-    ($name:ident) => {
-        vec![expr!($name)]
-    };
+    () => { vec![] };
+    ($name:ident) => { vec![expr!($name)] };
     ($name:ident,$($rest:tt)*) => {
         {
             let mut t = vec![expr!($name)];
@@ -185,6 +192,7 @@ macro_rules! fun_args {
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! expr {
     ($name:ident) => {
         Expr::Sym(stringify!($name).to_string())
@@ -202,12 +210,8 @@ mod tests {
     pub fn rule_apply_all() {
         // swap(pair(a, b)) = pair(b, a)
         let swap = Rule {
-            head: expr! {
-                swap(pair(a, b))
-            },
-            body: expr! {
-                pair(b, a)
-            },
+            head: expr!(swap(pair(a, b))),
+            body: expr!(pair(b, a)),
         };
 
         let input = expr! {
@@ -224,13 +228,26 @@ mod tests {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum TokenKind {
     Sym,
     OpenParen,
     CloseParen,
     Comma,
     Equals,
+}
+
+impl fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use TokenKind::*;
+        match self {
+            Sym => write!(f, "symbol"),
+            OpenParen => write!(f, "'('"),
+            CloseParen => write!(f, "')'"),
+            Comma => write!(f, "','"),
+            Equals => write!(f, "'='"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -253,7 +270,8 @@ impl<Chars: Iterator<Item = char>> Lexer<Chars> {
 
 impl<Chars: Iterator<Item = char>> Iterator for Lexer<Chars> {
     type Item = Token;
-    fn next(&mut self) -> Option<Self::Item> {
+
+    fn next(&mut self) -> Option<Token> {
         while let Some(_) = self.chars.next_if(|x| x.is_whitespace()) {}
 
         if let Some(x) = self.chars.next() {
@@ -282,7 +300,7 @@ impl<Chars: Iterator<Item = char>> Iterator for Lexer<Chars> {
                     }
 
                     while let Some(x) = self.chars.next_if(|x| x.is_alphanumeric()) {
-                        text.push(x);
+                        text.push(x)
                     }
 
                     Some(Token {
@@ -299,24 +317,25 @@ impl<Chars: Iterator<Item = char>> Iterator for Lexer<Chars> {
 
 fn main() {
     let swap = Rule {
-        head: expr! {
-            swap(pair(a, b))
-        },
-        body: expr! {
-            pair(b, a)
-        },
+        head: expr!(swap(pair(a, b))),
+        body: expr!(pair(b, a)),
     };
     let mut command = String::new();
-    let mut quit = false;
 
-    while !quit {
+    loop {
         command.clear();
         print!("> ");
         stdout().flush().unwrap();
         stdin().read_line(&mut command).unwrap();
-        println!(
-            "{}",
-            swap.apply_all(&Expr::parse(Lexer::from_iter(command.chars())))
-        );
+        match Expr::parse(&mut Lexer::from_iter(command.chars())) {
+            Ok(expr) => println!("{}", swap.apply_all(&expr)),
+            Err(Error::UnexpectedToken(expected, actual)) => {
+                println!("ERROR: expected {} but got {}", expected, actual)
+            }
+            Err(Error::UnexpectedEOF(expected)) => {
+                println!("ERROR: expected {} but got nothing", expected)
+            }
+        }
     }
 }
+
