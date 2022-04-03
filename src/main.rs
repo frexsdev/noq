@@ -1,6 +1,7 @@
 #[allow(unused_macros)]
 use std::collections::HashMap;
 use std::fmt;
+use std::io::{stdin, stdout, Write};
 use std::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -297,7 +298,6 @@ impl<Chars: Iterator<Item = char>> Iterator for Lexer<Chars> {
 }
 
 fn main() {
-    let source = "swap(pair(a, b))";
     let swap = Rule {
         head: expr! {
             swap(pair(a, b))
@@ -306,8 +306,17 @@ fn main() {
             pair(b, a)
         },
     };
-    println!(
-        "{}",
-        swap.apply_all(&Expr::parse(Lexer::from_iter(source.chars())))
-    )
+    let mut command = String::new();
+    let mut quit = false;
+
+    while !quit {
+        command.clear();
+        print!("> ");
+        stdout().flush().unwrap();
+        stdin().read_line(&mut command).unwrap();
+        println!(
+            "{}",
+            swap.apply_all(&Expr::parse(Lexer::from_iter(command.chars())))
+        );
+    }
 }
