@@ -122,50 +122,76 @@ fn pattern_match(pattern: &Expr, value: &Expr) -> Option<Bindings> {
     }
 }
 
-fn main() {
-    use Expr::*;
-    // swap(pair(a, b)) = pair(b, a)
-    let swap = Rule {
-        head: Fun(
-            "swap".to_string(),
-            vec![Fun(
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn rule_apply_all() {
+        use Expr::*;
+        // swap(pair(a, b)) = pair(b, a)
+        let swap = Rule {
+            head: Fun(
+                "swap".to_string(),
+                vec![Fun(
+                    "pair".to_string(),
+                    vec![Sym("a".to_string()), Sym("b".to_string())],
+                )],
+            ),
+            body: Fun(
                 "pair".to_string(),
-                vec![Sym("a".to_string()), Sym("b".to_string())],
-            )],
-        ),
-        body: Fun(
-            "pair".to_string(),
-            vec![Sym("b".to_string()), Sym("a".to_string())],
-        ),
-    };
+                vec![Sym("b".to_string()), Sym("a".to_string())],
+            ),
+        };
 
-    let expr = Fun(
-        "foo".to_string(),
-        vec![
-            Fun(
-                "swap".to_string(),
-                vec![Fun(
+        let input = Fun(
+            "foo".to_string(),
+            vec![
+                Fun(
+                    "swap".to_string(),
+                    vec![Fun(
+                        "pair".to_string(),
+                        vec![
+                            Fun("f".to_string(), vec![Sym("a".to_string())]),
+                            Fun("g".to_string(), vec![Sym("b".to_string())]),
+                        ],
+                    )],
+                ),
+                Fun(
+                    "swap".to_string(),
+                    vec![Fun(
+                        "pair".to_string(),
+                        vec![
+                            Fun("q".to_string(), vec![Sym("c".to_string())]),
+                            Fun("z".to_string(), vec![Sym("d".to_string())]),
+                        ],
+                    )],
+                ),
+            ],
+        );
+
+        let expected = Fun(
+            "foo".to_string(),
+            vec![
+                Fun(
                     "pair".to_string(),
                     vec![
-                        Fun("f".to_string(), vec![Sym("a".to_string())]),
                         Fun("g".to_string(), vec![Sym("b".to_string())]),
+                        Fun("f".to_string(), vec![Sym("a".to_string())]),
                     ],
-                )],
-            ),
-            Fun(
-                "swap".to_string(),
-                vec![Fun(
+                ),
+                Fun(
                     "pair".to_string(),
                     vec![
-                        Fun("q".to_string(), vec![Sym("c".to_string())]),
                         Fun("z".to_string(), vec![Sym("d".to_string())]),
+                        Fun("q".to_string(), vec![Sym("c".to_string())]),
                     ],
-                )],
-            ),
-        ],
-    );
+                ),
+            ],
+        );
 
-    println!("Rule:  {}", swap);
-    println!("Expr:  {}", expr);
-    println!("Expr': {}", swap.apply_all(&expr));
+        assert_eq!(swap.apply_all(&input), expected);
+    }
 }
+
+fn main() {}
