@@ -342,7 +342,10 @@ impl Context {
             TokenKind::Quit => {
                 self.quit = true;
             }
-            _ => unreachable!("Expected {} but got {}", expected_tokens, keyword.kind),
+            _ => unreachable!(
+                "Expected {} but got {} '{}'",
+                expected_tokens, keyword.kind, keyword.text
+            ),
         }
         Ok(())
     }
@@ -373,8 +376,8 @@ fn main() {
                 match err {
                     Error::UnexpectedToken(expected_kinds, actual_token) => {
                         eprintln!(
-                            "{}: ERROR: expected {} but got {}",
-                            actual_token.loc, expected_kinds, actual_token.kind
+                            "{}: ERROR: expected {} but got {} '{}'",
+                            actual_token.loc, expected_kinds, actual_token.kind, actual_token.text
                         );
                     }
                     Error::RuleAlreadyExists(name, new_loc, old_loc) => {
