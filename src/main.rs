@@ -249,6 +249,7 @@ mod tests {
 struct Context {
     rules: HashMap<String, Rule>,
     current_expr: Option<Expr>,
+    quit: bool,
 }
 
 impl Context {
@@ -260,7 +261,8 @@ impl Context {
             .set(TokenKind::Rule)
             .set(TokenKind::Shape)
             .set(TokenKind::Apply)
-            .set(TokenKind::Done);
+            .set(TokenKind::Done)
+            .set(TokenKind::Quit);
         let keyword = expect_token_kind(lexer, expected_tokens)?;
         // todo!("Ability to undo the rule application");
         // todo!("Quitting with a keyword");
@@ -339,6 +341,9 @@ impl Context {
                     return Err(Error::NoShapingInPlace(keyword.loc));
                 }
             }
+            TokenKind::Quit => {
+                self.quit = true;
+            }
             _ => unreachable!("Expected {} but got {}", expected_tokens, keyword.kind),
         }
         Ok(())
@@ -363,7 +368,9 @@ fn main() {
             lexer.set_file_path(&file_path);
             lexer.peekable()
         };
-        while lexer.peek().expect("Completely exhausted lexer").kind != TokenKind::End {
+        while !context.quit
+            && lexer.peek().expect("Completely exhausted lexer").kind != TokenKind::End
+        {
             if let Err(err) = context.process_command(&mut lexer) {
                 match err {
                     Error::UnexpectedToken(expected_kinds, actual_token) => {
@@ -397,7 +404,7 @@ fn main() {
         let shaping_prompt = "> ";
         let mut prompt: &str;
 
-        loop {
+        while !context.quit {
             command.clear();
             if let Some(_) = &context.current_expr {
                 prompt = shaping_prompt;
@@ -441,4 +448,3 @@ fn main() {
         }
     }
 }
-
