@@ -283,7 +283,6 @@ impl Context {
                     head,
                     body,
                 };
-                println!("rule {}", &rule);
                 self.rules.insert(name.text, rule);
             }
             TokenKind::Shape => {
@@ -292,7 +291,7 @@ impl Context {
                 }
 
                 let expr = Expr::parse(lexer)?;
-                println!("shaping {}", &expr);
+                println!(" => {}", &expr);
                 self.current_expr = Some(expr);
             }
             TokenKind::Apply => {
