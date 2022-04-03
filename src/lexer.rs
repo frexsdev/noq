@@ -1,20 +1,21 @@
 use std::fmt;
 use std::iter::Peekable;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Loc {
     pub file_path: Option<String>,
     pub row: usize,
     pub col: usize,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
 pub enum TokenKind {
     Sym,
     OpenParen,
     CloseParen,
     Comma,
     Equals,
+    Colon,
     Invalid,
 }
 
@@ -27,12 +28,13 @@ impl fmt::Display for TokenKind {
             CloseParen => write!(f, "close paren"),
             Comma => write!(f, "comma"),
             Equals => write!(f, "equals"),
+            Colon => write!(f, "colon"),
             Invalid => write!(f, "invalid token"),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Token {
     pub kind: TokenKind,
     pub text: String,
@@ -110,6 +112,11 @@ impl<Chars: Iterator<Item = char>> Iterator for Lexer<Chars> {
                 text,
                 loc,
             }),
+            ':' => Some(Token {
+                kind: TokenKind::Colon,
+                text,
+                loc,
+            }),
             _ => {
                 if !x.is_alphanumeric() {
                     self.invalid = true;
@@ -134,3 +141,4 @@ impl<Chars: Iterator<Item = char>> Iterator for Lexer<Chars> {
         }
     }
 }
+
