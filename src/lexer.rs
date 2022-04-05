@@ -38,6 +38,7 @@ token_kind_enum! {
     Done,
     Undo,
     Quit,
+    Reverse,
 
     // Special Characters
     OpenParen,
@@ -115,6 +116,7 @@ fn keyword_by_name(text: &str) -> Option<TokenKind> {
         "done" => Some(TokenKind::Done),
         "quit" => Some(TokenKind::Quit),
         "undo" => Some(TokenKind::Undo),
+        "reverse" => Some(TokenKind::Reverse),
         _ => None,
     }
 }
@@ -130,6 +132,7 @@ impl fmt::Display for TokenKind {
             Done => write!(f, "`done`"),
             Undo => write!(f, "`undo`"),
             Quit => write!(f, "`quit`"),
+            Reverse => write!(f, "`reverse`"),
             OpenParen => write!(f, "open paren"),
             CloseParen => write!(f, "close paren"),
             Comma => write!(f, "comma"),
@@ -337,4 +340,3 @@ impl<Chars: Iterator<Item = char>> Iterator for Lexer<Chars> {
 fn is_ident_char(x: &char) -> bool {
     x.is_alphanumeric() || *x == '_'
 }
-

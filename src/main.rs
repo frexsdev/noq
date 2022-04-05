@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::io::{stdin, stdout};
-use std::io::Write;
-use std::fmt;
 use std::env;
+use std::fmt;
 use std::fs;
+use std::io::Write;
+use std::io::{stdin, stdout};
 
 mod lexer;
 
@@ -28,7 +28,7 @@ impl Op {
             TokenKind::Asterisk => Some(Op::Mul),
             TokenKind::Slash => Some(Op::Div),
             TokenKind::Caret => Some(Op::Pow),
-            _ => None
+            _ => None,
         }
     }
 
@@ -37,7 +37,7 @@ impl Op {
         match self {
             Add | Sub => 0,
             Mul | Div => 1,
-            Pow       => 2,
+            Pow => 2,
         }
     }
 }
@@ -75,7 +75,10 @@ enum Error {
 
 impl Expr {
     fn var_or_sym_based_on_name(name: &str) -> Expr {
-        let x = name.chars().next().expect("Empty names are not allowed. This might be a bug in the lexer.");
+        let x = name
+            .chars()
+            .next()
+            .expect("Empty names are not allowed. This might be a bug in the lexer.");
         if x.is_uppercase() || x == '_' {
             Expr::Var(name.to_string())
         } else {
@@ -83,13 +86,13 @@ impl Expr {
         }
     }
 
-    fn parse_fun_args(lexer: &mut Lexer<impl Iterator<Item=char>>) -> Result<Vec<Self>, Error> {
+    fn parse_fun_args(lexer: &mut Lexer<impl Iterator<Item = char>>) -> Result<Vec<Self>, Error> {
         use TokenKind::*;
         let mut args = Vec::new();
         expect_token_kind(lexer, TokenKindSet::single(OpenParen))?;
         if lexer.peek_token().kind == CloseParen {
             lexer.next_token();
-            return Ok(args)
+            return Ok(args);
         }
         args.push(Self::parse(lexer)?);
         while lexer.peek_token().kind == Comma {
@@ -100,11 +103,16 @@ impl Expr {
         if close_paren.kind == CloseParen {
             Ok(args)
         } else {
-            Err(Error::UnexpectedToken(TokenKindSet::single(CloseParen), close_paren))
+            Err(Error::UnexpectedToken(
+                TokenKindSet::single(CloseParen),
+                close_paren,
+            ))
         }
     }
 
-    fn parse_fun_or_var_or_sym(lexer: &mut Lexer<impl Iterator<Item=char>>) -> Result<Self, Error> {
+    fn parse_fun_or_var_or_sym(
+        lexer: &mut Lexer<impl Iterator<Item = char>>,
+    ) -> Result<Self, Error> {
         let mut head = {
             let token = lexer.peek_token().clone();
             match token.kind {
@@ -118,9 +126,14 @@ impl Expr {
                 TokenKind::Ident => {
                     lexer.next_token();
                     Self::var_or_sym_based_on_name(&token.text)
-                },
+                }
 
-                _ => return Err(Error::UnexpectedToken(TokenKindSet::single(TokenKind::OpenParen).set(TokenKind::Ident), token))
+                _ => {
+                    return Err(Error::UnexpectedToken(
+                        TokenKindSet::single(TokenKind::OpenParen).set(TokenKind::Ident),
+                        token,
+                    ))
+                }
             }
         };
 
@@ -130,16 +143,19 @@ impl Expr {
         Ok(head)
     }
 
-    fn parse_binary_operator(lexer: &mut Lexer<impl Iterator<Item=char>>, current_precedence: usize) -> Result<Self, Error> {
+    fn parse_binary_operator(
+        lexer: &mut Lexer<impl Iterator<Item = char>>,
+        current_precedence: usize,
+    ) -> Result<Self, Error> {
         if current_precedence > Op::MAX_PRECEDENCE {
-            return Self::parse_fun_or_var_or_sym(lexer)
+            return Self::parse_fun_or_var_or_sym(lexer);
         }
 
         let mut result = Self::parse_binary_operator(lexer, current_precedence + 1)?;
 
         while let Some(op) = Op::from_token_kind(lexer.peek_token().kind) {
             if current_precedence != op.precedence() {
-                break
+                break;
             }
 
             lexer.next_token();
@@ -147,14 +163,14 @@ impl Expr {
             result = Expr::Op(
                 op,
                 Box::new(result),
-                Box::new(Self::parse_binary_operator(lexer, current_precedence)?)
+                Box::new(Self::parse_binary_operator(lexer, current_precedence)?),
             );
         }
 
         Ok(result)
     }
 
-    pub fn parse(lexer: &mut Lexer<impl Iterator<Item=char>>) -> Result<Self, Error> {
+    pub fn parse(lexer: &mut Lexer<impl Iterator<Item = char>>) -> Result<Self, Error> {
         Self::parse_binary_operator(lexer, 0)
     }
 }
@@ -164,21 +180,29 @@ impl fmt::Display for Expr {
         match self {
             Expr::Sym(name) | Expr::Var(name) => write!(f, "{}", name),
             Expr::Fun(head, args) => {
-                write!(f, "{}(", head)?;
+                match &**head {
+                    Expr::Sym(name) | Expr::Var(name) => write!(f, "{}", name)?,
+                    other => write!(f, "({})", other)?,
+                }
+                write!(f, "(")?;
                 for (i, arg) in args.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")? }
+                    if i > 0 {
+                        write!(f, ", ")?
+                    }
                     write!(f, "{}", arg)?;
                 }
                 write!(f, ")")
-            },
+            }
             Expr::Op(op, lhs, rhs) => {
                 match **lhs {
-                    Expr::Op(sub_op, _, _) => if sub_op.precedence() <= op.precedence() {
-                        write!(f, "({})", lhs)?
-                    } else {
-                        write!(f, "{}", lhs)?
+                    Expr::Op(sub_op, _, _) => {
+                        if sub_op.precedence() <= op.precedence() {
+                            write!(f, "({})", lhs)?
+                        } else {
+                            write!(f, "{}", lhs)?
+                        }
                     }
-                    _ => write!(f, "{}", lhs)?
+                    _ => write!(f, "{}", lhs)?,
                 }
                 if op.precedence() == 0 {
                     write!(f, " {} ", op)?;
@@ -186,12 +210,14 @@ impl fmt::Display for Expr {
                     write!(f, "{}", op)?;
                 }
                 match **rhs {
-                    Expr::Op(sub_op, _, _) => if sub_op.precedence() <= op.precedence() {
-                        write!(f, "({})", rhs)
-                    } else {
-                        write!(f, "{}", rhs)
+                    Expr::Op(sub_op, _, _) => {
+                        if sub_op.precedence() <= op.precedence() {
+                            write!(f, "({})", rhs)
+                        } else {
+                            write!(f, "{}", rhs)
+                        }
                     }
-                    _ => write!(f, "{}", rhs)
+                    _ => write!(f, "{}", rhs),
                 }
             }
         }
@@ -200,7 +226,7 @@ impl fmt::Display for Expr {
 
 enum Action {
     Skip,
-    Apply
+    Apply,
 }
 
 enum State {
@@ -221,7 +247,7 @@ trait Strategy {
     fn matched(&mut self) -> Resolution;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Rule {
     loc: Loc,
     head: Expr,
@@ -257,7 +283,7 @@ struct ApplyNth {
 
 impl ApplyNth {
     fn new(target: usize) -> Self {
-        Self {current: 0, target}
+        Self { current: 0, target }
     }
 }
 
@@ -285,16 +311,22 @@ impl Strategy for ApplyNth {
 
 impl Rule {
     fn apply(&self, expr: &Expr, strategy: &mut impl Strategy) -> Expr {
-        fn apply_to_subexprs(rule: &Rule, expr: &Expr, strategy: &mut impl Strategy) -> (Expr, bool) {
+        fn apply_to_subexprs(
+            rule: &Rule,
+            expr: &Expr,
+            strategy: &mut impl Strategy,
+        ) -> (Expr, bool) {
             use Expr::*;
             match expr {
                 Sym(_) | Var(_) => (expr.clone(), false),
                 Op(op, lhs, rhs) => {
                     let (new_lhs, halt) = apply_impl(rule, lhs, strategy);
-                    if halt { return (Op(*op, Box::new(new_lhs), rhs.clone()), true) }
+                    if halt {
+                        return (Op(*op, Box::new(new_lhs), rhs.clone()), true);
+                    }
                     let (new_rhs, halt) = apply_impl(rule, rhs, strategy);
                     (Op(*op, Box::new(new_lhs), Box::new(new_rhs)), halt)
-                },
+                }
                 Fun(head, args) => {
                     let (new_head, halt) = apply_impl(rule, head, strategy);
                     if halt {
@@ -356,13 +388,11 @@ fn substitute_bindings(bindings: &Bindings, expr: &Expr) -> Expr {
             }
         }
 
-        Op(op, lhs, rhs) => {
-            Op(
-                *op,
-                Box::new(substitute_bindings(bindings, lhs)),
-                Box::new(substitute_bindings(bindings, rhs))
-            )
-        },
+        Op(op, lhs, rhs) => Op(
+            *op,
+            Box::new(substitute_bindings(bindings, lhs)),
+            Box::new(substitute_bindings(bindings, rhs)),
+        ),
 
         Fun(head, args) => {
             let new_head = substitute_bindings(bindings, head);
@@ -375,7 +405,10 @@ fn substitute_bindings(bindings: &Bindings, expr: &Expr) -> Expr {
     }
 }
 
-fn expect_token_kind(lexer: &mut Lexer<impl Iterator<Item=char>>, kinds: TokenKindSet) -> Result<Token, Error> {
+fn expect_token_kind(
+    lexer: &mut Lexer<impl Iterator<Item = char>>,
+    kinds: TokenKindSet,
+) -> Result<Token, Error> {
     let token = lexer.next_token();
     if kinds.contains(token.kind) {
         Ok(token)
@@ -390,9 +423,7 @@ fn pattern_match(pattern: &Expr, value: &Expr) -> Option<Bindings> {
     fn pattern_match_impl(pattern: &Expr, value: &Expr, bindings: &mut Bindings) -> bool {
         use Expr::*;
         match (pattern, value) {
-            (Sym(name1), Sym(name2)) => {
-                name1 == name2
-            }
+            (Sym(name1), Sym(name2)) => name1 == name2,
             (Var(name), _) => {
                 if name == "_" {
                     true
@@ -404,7 +435,9 @@ fn pattern_match(pattern: &Expr, value: &Expr) -> Option<Bindings> {
                 }
             }
             (Op(op1, lhs1, rhs1), Op(op2, lhs2, rhs2)) => {
-                *op1 == *op2 && pattern_match_impl(lhs1, lhs2, bindings) && pattern_match_impl(rhs1, rhs2, bindings)
+                *op1 == *op2
+                    && pattern_match_impl(lhs1, lhs2, bindings)
+                    && pattern_match_impl(rhs1, rhs2, bindings)
             }
             (Fun(name1, args1), Fun(name2, args2)) => {
                 if pattern_match_impl(name1, name2, bindings) && args1.len() == args2.len() {
@@ -417,7 +450,7 @@ fn pattern_match(pattern: &Expr, value: &Expr) -> Option<Bindings> {
                 } else {
                     false
                 }
-            },
+            }
             _ => false,
         }
     }
@@ -440,7 +473,53 @@ struct Context {
 }
 
 impl Context {
-    fn process_command(&mut self, lexer: &mut Lexer<impl Iterator<Item=char>>) -> Result<(), Error> {
+    fn parse_applied_rule(
+        &self,
+        lexer: &mut Lexer<impl Iterator<Item = char>>,
+    ) -> Result<Rule, Error> {
+        let token = lexer.next_token();
+        match token.kind {
+            TokenKind::Reverse => {
+                let rule = self.parse_applied_rule(lexer)?;
+                Ok(Rule {
+                    loc: token.loc,
+                    head: rule.body,
+                    body: rule.head,
+                })
+            }
+
+            TokenKind::Rule => {
+                let head = Expr::parse(lexer)?;
+                expect_token_kind(lexer, TokenKindSet::single(TokenKind::Equals))?;
+                let body = Expr::parse(lexer)?;
+                Ok(Rule {
+                    loc: token.loc,
+                    head,
+                    body,
+                })
+            }
+
+            TokenKind::Ident => {
+                if let Some(rule) = self.rules.get(&token.text) {
+                    Ok(rule.clone())
+                } else {
+                    Err(Error::RuleDoesNotExist(token.text, token.loc))
+                }
+            }
+
+            _ => Err(Error::UnexpectedToken(
+                TokenKindSet::single(TokenKind::Reverse)
+                    .set(TokenKind::Rule)
+                    .set(TokenKind::Ident),
+                token,
+            )),
+        }
+    }
+
+    fn process_command(
+        &mut self,
+        lexer: &mut Lexer<impl Iterator<Item = char>>,
+    ) -> Result<(), Error> {
         let expected_tokens = TokenKindSet::empty()
             .set(TokenKind::Rule)
             .set(TokenKind::Shape)
@@ -453,7 +532,11 @@ impl Context {
             TokenKind::Rule => {
                 let name = expect_token_kind(lexer, TokenKindSet::single(TokenKind::Ident))?;
                 if let Some(existing_rule) = self.rules.get(&name.text) {
-                    return Err(Error::RuleAlreadyExists(name.text, name.loc, existing_rule.loc.clone()))
+                    return Err(Error::RuleAlreadyExists(
+                        name.text,
+                        name.loc,
+                        existing_rule.loc.clone(),
+                    ));
                 }
                 let head = Expr::parse(lexer)?;
                 expect_token_kind(lexer, TokenKindSet::single(TokenKind::Equals))?;
@@ -467,41 +550,19 @@ impl Context {
             }
             TokenKind::Shape => {
                 if let Some(_) = self.current_expr {
-                    return Err(Error::AlreadyShaping(keyword.loc))
+                    return Err(Error::AlreadyShaping(keyword.loc));
                 }
 
                 let expr = Expr::parse(lexer)?;
                 println!(" => {}", &expr);
                 self.current_expr = Some(expr);
-            },
+            }
             TokenKind::Apply => {
                 if let Some(expr) = &self.current_expr {
-                    let strategy_name = expect_token_kind(lexer, TokenKindSet::single(TokenKind::Ident))?;
+                    let strategy_name =
+                        expect_token_kind(lexer, TokenKindSet::single(TokenKind::Ident))?;
 
-                    let expected_kinds = TokenKindSet::empty()
-                        .set(TokenKind::Ident)
-                        .set(TokenKind::Rule);
-                    let token = expect_token_kind(lexer, expected_kinds)?;
-                    let mut anonymous_rule: Option<Rule> = None;
-                    let rule = match token.kind {
-                        TokenKind::Ident => {
-                            if let Some(rule) = self.rules.get(&token.text) {
-                                rule
-                            } else {
-                                return Err(Error::RuleDoesNotExist(token.text, token.loc));
-                            }
-                        }
-
-                        TokenKind::Rule => {
-                            let head = Expr::parse(lexer)?;
-                            expect_token_kind(lexer, TokenKindSet::single(TokenKind::Equals))?;
-                            let body = Expr::parse(lexer)?;
-                            anonymous_rule.insert(Rule {loc: token.loc, head, body})
-                        }
-
-                        _ => unreachable!("Expected {} but got {}", expected_kinds, token.kind)
-                    };
-
+                    let rule = self.parse_applied_rule(lexer)?;
                     // todo!("Throw an error if not a single match for the rule was found")
 
                     let new_expr = match &strategy_name.text as &str {
@@ -510,12 +571,19 @@ impl Context {
                         "deep" => rule.apply(&expr, &mut ApplyDeep),
                         x => match x.parse() {
                             Ok(x) => rule.apply(&expr, &mut ApplyNth::new(x)),
-                            _ => return Err(Error::UnknownStrategy(strategy_name.text, strategy_name.loc))
-                        }
+                            _ => {
+                                return Err(Error::UnknownStrategy(
+                                    strategy_name.text,
+                                    strategy_name.loc,
+                                ))
+                            }
+                        },
                     };
                     println!(" => {}", &new_expr);
                     self.shaping_history.push(
-                        self.current_expr.replace(new_expr).expect("current_expr must have something")
+                        self.current_expr
+                            .replace(new_expr)
+                            .expect("current_expr must have something"),
                     );
                 } else {
                     return Err(Error::NoShapingInPlace(keyword.loc));
@@ -526,7 +594,7 @@ impl Context {
                     self.current_expr = None;
                     self.shaping_history.clear();
                 } else {
-                    return Err(Error::NoShapingInPlace(keyword.loc))
+                    return Err(Error::NoShapingInPlace(keyword.loc));
                 }
             }
             TokenKind::Undo => {
@@ -535,16 +603,19 @@ impl Context {
                         println!(" => {}", &previous_expr);
                         self.current_expr.replace(previous_expr);
                     } else {
-                        return Err(Error::NoHistory(keyword.loc))
+                        return Err(Error::NoHistory(keyword.loc));
                     }
                 } else {
-                    return Err(Error::NoShapingInPlace(keyword.loc))
+                    return Err(Error::NoShapingInPlace(keyword.loc));
                 }
             }
             TokenKind::Quit => {
                 self.quit = true;
             }
-            _ => unreachable!("Expected {} but got {} '{}'", expected_tokens, keyword.kind, keyword.text),
+            _ => unreachable!(
+                "Expected {} but got {} '{}'",
+                expected_tokens, keyword.kind, keyword.text
+            ),
         }
         Ok(())
     }
@@ -552,7 +623,7 @@ impl Context {
 
 fn eprint_repl_loc_cursor(prompt: &str, loc: &Loc) {
     assert!(loc.row == 1);
-    eprintln!("{:>width$}^", "", width=prompt.len() + loc.col - 1);
+    eprintln!("{:>width$}^", "", width = prompt.len() + loc.col - 1);
 }
 
 fn main() {
@@ -568,8 +639,10 @@ fn main() {
             if let Err(err) = context.process_command(&mut lexer) {
                 match err {
                     Error::UnexpectedToken(expected_kinds, actual_token) => {
-                        eprintln!("{}: ERROR: expected {} but got {} '{}'",
-                                  actual_token.loc, expected_kinds, actual_token.kind, actual_token.text);
+                        eprintln!(
+                            "{}: ERROR: expected {} but got {} '{}'",
+                            actual_token.loc, expected_kinds, actual_token.kind, actual_token.text
+                        );
                     }
                     Error::RuleAlreadyExists(name, new_loc, old_loc) => {
                         eprintln!("{}: ERROR: redefinition of existing rule {}", new_loc, name);
@@ -589,7 +662,10 @@ fn main() {
                         eprintln!("{}: ERROR: no history", loc);
                     }
                     Error::UnknownStrategy(name, loc) => {
-                        eprintln!("{}: ERROR: unknown rule application strategy '{}'", loc, name);
+                        eprintln!(
+                            "{}: ERROR: unknown rule application strategy '{}'",
+                            loc, name
+                        );
                     }
                 }
                 std::process::exit(1);
@@ -614,12 +690,16 @@ fn main() {
             stdin().read_line(&mut command).unwrap();
             let mut lexer = Lexer::new(command.trim().chars(), None);
             if lexer.peek_token().kind != TokenKind::End {
-                let result = context.process_command(&mut lexer)
-                    .and_then(|()| expect_token_kind(&mut lexer, TokenKindSet::single(TokenKind::End)));
+                let result = context.process_command(&mut lexer).and_then(|()| {
+                    expect_token_kind(&mut lexer, TokenKindSet::single(TokenKind::End))
+                });
                 match result {
                     Err(Error::UnexpectedToken(expected, actual)) => {
                         eprint_repl_loc_cursor(prompt, &actual.loc);
-                        eprintln!("ERROR: expected {} but got {} '{}'", expected, actual.kind, actual.text);
+                        eprintln!(
+                            "ERROR: expected {} but got {} '{}'",
+                            expected, actual.kind, actual.text
+                        );
                     }
                     Err(Error::RuleAlreadyExists(name, new_loc, _old_loc)) => {
                         eprint_repl_loc_cursor(prompt, &new_loc);
@@ -653,7 +733,6 @@ fn main() {
     }
 }
 
-// TODO: Applying reversed rules
 // TODO: Implement replace! macro
 // TODO: Save session to file
 // TODO: Special mode for testing the parsing of the expressions
