@@ -46,6 +46,13 @@ token_kind_enum! {
     Equals,
     Colon,
 
+    // Binary Operators
+    Plus,
+    Dash,
+    Asterisk,
+    Slash,
+    Caret,
+
     // Terminators
     Invalid,
     End,
@@ -129,6 +136,11 @@ impl fmt::Display for TokenKind {
             Equals => write!(f, "equals"),
             Colon => write!(f, "colon"),
             Invalid => write!(f, "invalid token"),
+            Plus => write!(f, "plus"),
+            Dash => write!(f, "dash"),
+            Asterisk => write!(f, "asterisk"),
+            Slash => write!(f, "slash"),
+            Caret => write!(f, "caret"),
             End => write!(f, "end of input"),
         }
     }
@@ -244,6 +256,31 @@ impl<Chars: Iterator<Item = char>> Lexer<Chars> {
                         text,
                         loc,
                     },
+                    '+' => Token {
+                        kind: TokenKind::Plus,
+                        text,
+                        loc,
+                    },
+                    '-' => Token {
+                        kind: TokenKind::Dash,
+                        text,
+                        loc,
+                    },
+                    '*' => Token {
+                        kind: TokenKind::Asterisk,
+                        text,
+                        loc,
+                    },
+                    '/' => Token {
+                        kind: TokenKind::Slash,
+                        text,
+                        loc,
+                    },
+                    '^' => Token {
+                        kind: TokenKind::Caret,
+                        text,
+                        loc,
+                    },
                     _ => {
                         if !is_ident_char(&x) {
                             self.exhausted = true;
@@ -288,3 +325,4 @@ impl<Chars: Iterator<Item = char>> Lexer<Chars> {
 fn is_ident_char(x: &char) -> bool {
     x.is_alphanumeric() || *x == '_'
 }
+
