@@ -5,6 +5,7 @@ use std::fs;
 use std::io::Write;
 use std::io::{stdin, stdout};
 
+#[macro_use]
 mod lexer;
 
 use lexer::*;
@@ -425,8 +426,7 @@ impl Rule {
                         pattern_match(&expr!(apply_rule(Strategy, Head, Body, Expr)), expr)
                     {
                         let meta_rule = Rule::User {
-                            // TODO: determine the location of the meta rule properly
-                            loc: Loc::default(),
+                            loc: loc_here!(),
                             head: bindings
                                 .get("Head")
                                 .expect("Variable `Head` is present in the meta pattern")
