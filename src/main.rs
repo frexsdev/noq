@@ -297,77 +297,73 @@ struct Resolution {
     state: State,
 }
 
-trait Strategy {
-    fn matched(&mut self) -> Resolution;
-}
-
 #[derive(Debug, Clone)]
 enum Rule {
     User { loc: Loc, head: Expr, body: Expr },
     Replace,
 }
 
-struct ApplyAll;
+enum Strategy {
+    All,
+    Deep,
+    Nth { current: usize, target: usize },
+}
 
-impl Strategy for ApplyAll {
-    fn matched(&mut self) -> Resolution {
-        Resolution {
-            action: Action::Apply,
-            state: State::Bail,
+impl Strategy {
+    fn by_name(name: &str) -> Option<Self> {
+        match name {
+            "all" => Some(Self::All),
+            "first" => Some(Self::nth(0)),
+            "deep" => Some(Self::Deep),
+            x => x.parse().map(Self::nth).ok(),
         }
     }
-}
 
-struct ApplyDeep;
-
-impl Strategy for ApplyDeep {
-    fn matched(&mut self) -> Resolution {
-        Resolution {
-            action: Action::Apply,
-            state: State::Cont,
-        }
+    fn nth(target: usize) -> Self {
+        Self::Nth { current: 0, target }
     }
-}
 
-struct ApplyNth {
-    current: usize,
-    target: usize,
-}
-
-impl ApplyNth {
-    fn new(target: usize) -> Self {
-        Self { current: 0, target }
-    }
-}
-
-impl Strategy for ApplyNth {
     fn matched(&mut self) -> Resolution {
-        if self.current == self.target {
-            Resolution {
+        match self {
+            Self::All => Resolution {
                 action: Action::Apply,
-                state: State::Halt,
-            }
-        } else if self.current > self.target {
-            Resolution {
-                action: Action::Skip,
-                state: State::Halt,
-            }
-        } else {
-            self.current += 1;
-            Resolution {
-                action: Action::Skip,
+                state: State::Bail,
+            },
+
+            Self::Deep => Resolution {
+                action: Action::Apply,
                 state: State::Cont,
+            },
+
+            Self::Nth { current, target } => {
+                if current == target {
+                    Resolution {
+                        action: Action::Apply,
+                        state: State::Halt,
+                    }
+                } else if current > target {
+                    Resolution {
+                        action: Action::Skip,
+                        state: State::Halt,
+                    }
+                } else {
+                    *current += 1;
+                    Resolution {
+                        action: Action::Skip,
+                        state: State::Cont,
+                    }
+                }
             }
         }
     }
 }
 
 impl Rule {
-    fn apply(&self, expr: &Expr, strategy: &mut impl Strategy) -> Result<Expr, RuntimeError> {
+    fn apply(&self, expr: &Expr, strategy: &mut Strategy) -> Result<Expr, RuntimeError> {
         fn apply_to_subexprs(
             rule: &Rule,
             expr: &Expr,
-            strategy: &mut impl Strategy,
+            strategy: &mut Strategy,
         ) -> Result<(Expr, bool), RuntimeError> {
             use Expr::*;
             match expr {
@@ -405,7 +401,7 @@ impl Rule {
         fn apply_impl(
             rule: &Rule,
             expr: &Expr,
-            strategy: &mut impl Strategy,
+            strategy: &mut Strategy,
         ) -> Result<(Expr, bool), RuntimeError> {
             match rule {
                 Rule::User { loc: _, head, body } => {
@@ -447,21 +443,14 @@ impl Rule {
                             let meta_expr = bindings
                                 .get("Expr")
                                 .expect("Variable `Expr` is present in the meta pattern");
-                            // TODO: factor out strategy construction
-                            // @strategy-dup
-                            let result = match meta_strategy_name as &str {
-                                "all" => meta_rule.apply(&meta_expr, &mut ApplyAll),
-                                "first" => meta_rule.apply(&meta_expr, &mut ApplyNth::new(0)),
-                                "deep" => meta_rule.apply(&meta_expr, &mut ApplyDeep),
-                                x => match x.parse() {
-                                    Ok(x) => rule.apply(&meta_expr, &mut ApplyNth::new(x)),
-                                    // TODO: report the location of the strategy properly
-                                    // This may require finally adding location to Expr
-                                    _ => Err(RuntimeError::UnknownStrategy(
-                                        meta_strategy_name.to_string(),
-                                        Loc::default(),
-                                    )),
-                                },
+                            let result = match Strategy::by_name(meta_strategy_name) {
+                                Some(mut strategy) => meta_rule.apply(&meta_expr, &mut strategy),
+                                // TODO: report the location of the strategy properly
+                                // This may require finally adding location to Expr
+                                None => Err(RuntimeError::UnknownStrategy(
+                                    meta_strategy_name.to_string(),
+                                    Loc::default(),
+                                )),
                             };
                             Ok((result?, false))
                         } else {
@@ -669,21 +658,15 @@ impl Context {
                     let rule = self.parse_applied_rule(lexer)?;
                     // todo!("Throw an error if not a single match for the rule was found")
 
-                    // @strategy-dup
-                    let new_expr = match &strategy_name.text as &str {
-                        "all" => rule.apply(&expr, &mut ApplyAll)?,
-                        "first" => rule.apply(&expr, &mut ApplyNth::new(0))?,
-                        "deep" => rule.apply(&expr, &mut ApplyDeep)?,
-                        x => match x.parse() {
-                            Ok(x) => rule.apply(&expr, &mut ApplyNth::new(x))?,
-                            _ => {
-                                return Err(RuntimeError::UnknownStrategy(
-                                    strategy_name.text,
-                                    strategy_name.loc,
-                                )
-                                .into())
-                            }
-                        },
+                    let new_expr = match Strategy::by_name(&strategy_name.text) {
+                        Some(mut strategy) => rule.apply(&expr, &mut strategy)?,
+                        None => {
+                            return Err(RuntimeError::UnknownStrategy(
+                                strategy_name.text,
+                                strategy_name.loc,
+                            )
+                            .into())
+                        }
                     };
                     println!(" => {}", &new_expr);
                     self.shaping_history.push(
