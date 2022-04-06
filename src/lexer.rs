@@ -1,7 +1,7 @@
 use std::fmt;
 use std::iter::Peekable;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Loc {
     pub file_path: Option<String>,
     pub row: usize,
@@ -52,14 +52,14 @@ pub enum TokenKind {
 
 fn keyword_by_name(text: &str) -> Option<TokenKind> {
     match text {
-        "rule" => Some(TokenKind::Rule),
-        "shape" => Some(TokenKind::Shape),
-        "apply" => Some(TokenKind::Apply),
-        "done" => Some(TokenKind::Done),
-        "quit" => Some(TokenKind::Quit),
-        "undo" => Some(TokenKind::Undo),
-        "reverse" => Some(TokenKind::Reverse),
-        "delete" => Some(TokenKind::Delete),
+        "rule"     => Some(TokenKind::Rule),
+        "shape"    => Some(TokenKind::Shape),
+        "apply"    => Some(TokenKind::Apply),
+        "done"     => Some(TokenKind::Done),
+        "quit"     => Some(TokenKind::Quit),
+        "undo"     => Some(TokenKind::Undo),
+        "reverse"  => Some(TokenKind::Reverse),
+        "delete"   => Some(TokenKind::Delete),
         _ => None,
     }
 }
@@ -100,7 +100,7 @@ pub struct Token {
     pub loc: Loc,
 }
 
-pub struct Lexer<Chars: Iterator<Item = char>> {
+pub struct Lexer<Chars: Iterator<Item=char>> {
     chars: Peekable<Chars>,
     peeked: Option<Token>,
     exhausted: bool,
@@ -110,7 +110,7 @@ pub struct Lexer<Chars: Iterator<Item = char>> {
     cnum: usize,
 }
 
-impl<Chars: Iterator<Item = char>> Lexer<Chars> {
+impl<Chars: Iterator<Item=char>> Lexer<Chars> {
     pub fn new(chars: Chars, file_path: Option<String>) -> Self {
         Self {
             chars: chars.peekable(),
@@ -137,9 +137,7 @@ impl<Chars: Iterator<Item = char>> Lexer<Chars> {
     }
 
     pub fn next_token(&mut self) -> Token {
-        self.peeked
-            .take()
-            .unwrap_or_else(|| self.chop_tokens_from_chars())
+        self.peeked.take().unwrap_or_else(|| self.chop_tokens_from_chars())
     }
 
     fn drop_line(&mut self) {
@@ -165,7 +163,7 @@ impl<Chars: Iterator<Item = char>> Lexer<Chars> {
         self.trim_whitespaces();
         while let Some(x) = self.chars.peek() {
             if *x != '\n' && *x != '#' {
-                break;
+                break
             }
 
             self.drop_line();
@@ -178,64 +176,20 @@ impl<Chars: Iterator<Item = char>> Lexer<Chars> {
                 self.cnum += 1;
                 let mut text = x.to_string();
                 match x {
-                    '(' => Token {
-                        kind: TokenKind::OpenParen,
-                        text,
-                        loc,
-                    },
-                    ')' => Token {
-                        kind: TokenKind::CloseParen,
-                        text,
-                        loc,
-                    },
-                    ',' => Token {
-                        kind: TokenKind::Comma,
-                        text,
-                        loc,
-                    },
-                    '=' => Token {
-                        kind: TokenKind::Equals,
-                        text,
-                        loc,
-                    },
-                    ':' => Token {
-                        kind: TokenKind::Colon,
-                        text,
-                        loc,
-                    },
-                    '+' => Token {
-                        kind: TokenKind::Plus,
-                        text,
-                        loc,
-                    },
-                    '-' => Token {
-                        kind: TokenKind::Dash,
-                        text,
-                        loc,
-                    },
-                    '*' => Token {
-                        kind: TokenKind::Asterisk,
-                        text,
-                        loc,
-                    },
-                    '/' => Token {
-                        kind: TokenKind::Slash,
-                        text,
-                        loc,
-                    },
-                    '^' => Token {
-                        kind: TokenKind::Caret,
-                        text,
-                        loc,
-                    },
+                    '(' => Token {kind: TokenKind::OpenParen,  text, loc},
+                    ')' => Token {kind: TokenKind::CloseParen, text, loc},
+                    ',' => Token {kind: TokenKind::Comma,      text, loc},
+                    '=' => Token {kind: TokenKind::Equals,     text, loc},
+                    ':' => Token {kind: TokenKind::Colon,      text, loc},
+                    '+' => Token {kind: TokenKind::Plus,       text, loc},
+                    '-' => Token {kind: TokenKind::Dash,       text, loc},
+                    '*' => Token {kind: TokenKind::Asterisk,   text, loc},
+                    '/' => Token {kind: TokenKind::Slash,      text, loc},
+                    '^' => Token {kind: TokenKind::Caret,      text, loc},
                     _ => {
                         if !is_ident_char(&x) {
                             self.exhausted = true;
-                            Token {
-                                kind: TokenKind::Invalid,
-                                text,
-                                loc,
-                            }
+                            Token{kind: TokenKind::Invalid, text, loc}
                         } else {
                             while let Some(x) = self.chars.next_if(is_ident_char) {
                                 self.cnum += 1;
@@ -243,13 +197,9 @@ impl<Chars: Iterator<Item = char>> Lexer<Chars> {
                             }
 
                             if let Some(kind) = keyword_by_name(&text) {
-                                Token { kind, text, loc }
+                                Token{kind, text, loc}
                             } else {
-                                Token {
-                                    kind: TokenKind::Ident,
-                                    text,
-                                    loc,
-                                }
+                                Token{kind: TokenKind::Ident, text, loc}
                             }
                         }
                     }
@@ -259,17 +209,13 @@ impl<Chars: Iterator<Item = char>> Lexer<Chars> {
             None => {
                 self.cnum += 1;
                 self.exhausted = true;
-                Token {
-                    kind: TokenKind::End,
-                    text: "".to_string(),
-                    loc,
-                }
+                Token{kind: TokenKind::End, text: "".to_string(), loc}
             }
         }
     }
 }
 
-impl<Chars: Iterator<Item = char>> Iterator for Lexer<Chars> {
+impl<Chars: Iterator<Item=char>> Iterator for Lexer<Chars> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -284,4 +230,3 @@ impl<Chars: Iterator<Item = char>> Iterator for Lexer<Chars> {
 fn is_ident_char(x: &char) -> bool {
     x.is_alphanumeric() || *x == '_'
 }
-

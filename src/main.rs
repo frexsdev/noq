@@ -72,12 +72,13 @@ enum SyntaxError {
 
 #[derive(Debug)]
 enum RuntimeError {
-    RuleAlreadyExists(String, Loc, Loc),
+    RuleAlreadyExists(String, Loc, Option<Loc>),
     RuleDoesNotExist(String, Loc),
     AlreadyShaping(Loc),
     NoShapingInPlace(Loc),
     NoHistory(Loc),
     UnknownStrategy(String, Loc),
+    IrreversibleRule(Loc),
 }
 
 #[derive(Debug)]
@@ -98,19 +99,19 @@ impl From<RuntimeError> for Error {
     }
 }
 
-impl Expr {
-    fn var_or_sym_based_on_name(name: &str) -> Expr {
-        let x = name
-            .chars()
-            .next()
-            .expect("Empty names are not allowed. This might be a bug in the lexer.");
-        if x.is_uppercase() || x == '_' {
-            Expr::Var(name.to_string())
-        } else {
-            Expr::Sym(name.to_string())
-        }
+fn var_or_sym_based_on_name(name: &str) -> Expr {
+    let x = name
+        .chars()
+        .next()
+        .expect("Empty names are not allowed. This might be a bug in the lexer.");
+    if x.is_uppercase() || x == '_' {
+        Expr::Var(name.to_string())
+    } else {
+        Expr::Sym(name.to_string())
     }
+}
 
+impl Expr {
     fn parse_fun_args(
         lexer: &mut Lexer<impl Iterator<Item = char>>,
     ) -> Result<Vec<Self>, SyntaxError> {
@@ -149,7 +150,7 @@ impl Expr {
 
                 TokenKind::Ident => {
                     lexer.next_token();
-                    Self::var_or_sym_based_on_name(&token.text)
+                    var_or_sym_based_on_name(&token.text)
                 }
 
                 _ => return Err(SyntaxError::ExpectedPrimary(token)),
@@ -192,6 +193,39 @@ impl Expr {
     pub fn parse(lexer: &mut Lexer<impl Iterator<Item = char>>) -> Result<Self, SyntaxError> {
         Self::parse_binary_operator(lexer, 0)
     }
+}
+
+#[allow(unused_macros)]
+macro_rules! fun_args {
+    () => { vec![] };
+    ($name:ident) => { vec![expr!($name)] };
+    ($name:ident,$($rest:tt)*) => {
+        {
+            let mut t = vec![expr!($name)];
+            t.append(&mut fun_args!($($rest)*));
+            t
+        }
+    };
+    ($name:ident($($args:tt)*)) => {
+        vec![expr!($name($($args)*))]
+    };
+    ($name:ident($($args:tt)*),$($rest:tt)*) => {
+        {
+            let mut t = vec![expr!($name($($args)*))];
+            t.append(&mut fun_args!($($rest)*));
+            t
+        }
+    }
+}
+
+#[allow(unused_macros)]
+macro_rules! expr {
+    ($name:ident) => {
+        var_or_sym_based_on_name(stringify!($name))
+    };
+    ($name:ident($($args:tt)*)) => {
+        Expr::Fun(Box::new(var_or_sym_based_on_name(stringify!($name))), fun_args!($($args)*))
+    };
 }
 
 impl fmt::Display for Expr {
@@ -267,10 +301,9 @@ trait Strategy {
 }
 
 #[derive(Debug, Clone)]
-struct Rule {
-    loc: Loc,
-    head: Expr,
-    body: Expr,
+enum Rule {
+    User { loc: Loc, head: Expr, body: Expr },
+    Replace,
 }
 
 struct ApplyAll;
@@ -369,28 +402,69 @@ impl Rule {
         }
 
         fn apply_impl(rule: &Rule, expr: &Expr, strategy: &mut impl Strategy) -> (Expr, bool) {
-            if let Some(bindings) = pattern_match(&rule.head, expr) {
-                let resolution = strategy.matched();
-                let new_expr = match resolution.action {
-                    Action::Apply => substitute_bindings(&bindings, &rule.body),
-                    Action::Skip => expr.clone(),
-                };
-                match resolution.state {
-                    State::Bail => (new_expr, false),
-                    State::Cont => apply_to_subexprs(rule, &new_expr, strategy),
-                    State::Halt => (new_expr, true),
+            match rule {
+                Rule::User { loc: _, head, body } => {
+                    if let Some(bindings) = pattern_match(head, expr) {
+                        let resolution = strategy.matched();
+                        let new_expr = match resolution.action {
+                            Action::Apply => substitute_bindings(&bindings, body),
+                            Action::Skip => expr.clone(),
+                        };
+                        match resolution.state {
+                            State::Bail => (new_expr, false),
+                            State::Cont => apply_to_subexprs(rule, &new_expr, strategy),
+                            State::Halt => (new_expr, true),
+                        }
+                    } else {
+                        apply_to_subexprs(rule, expr, strategy)
+                    }
                 }
-            } else {
-                apply_to_subexprs(rule, expr, strategy)
+
+                Rule::Replace => {
+                    if let Some(bindings) =
+                        pattern_match(&expr!(apply_rule(Strategy, Head, Body, Expr)), expr)
+                    {
+                        let meta_rule = Rule::User {
+                            // TODO: determine the location of the meta rule properly
+                            loc: Loc::default(),
+                            head: bindings
+                                .get("Head")
+                                .expect("Variable `Head` is present in the meta pattern")
+                                .clone(),
+                            body: bindings
+                                .get("Body")
+                                .expect("Variable `Body` is present in the meta pattern")
+                                .clone(),
+                        };
+                        let meta_strategy = bindings
+                            .get("Strategy")
+                            .expect("Variable `Strategy` is present in the meta pattern");
+                        if let Expr::Sym(meta_strategy_name) = meta_strategy {
+                            let meta_expr = bindings
+                                .get("Expr")
+                                .expect("Variable `Expr` is present in the meta pattern");
+                            // TODO: factor out strategy construction
+                            // @strategy-dup
+                            let result = match &meta_strategy_name as &str {
+                                "all" => meta_rule.apply(&meta_expr, &mut ApplyAll),
+                                "first" => meta_rule.apply(&meta_expr, &mut ApplyNth::new(0)),
+                                "deep" => meta_rule.apply(&meta_expr, &mut ApplyDeep),
+                                x => match x.parse() {
+                                    Ok(x) => rule.apply(&meta_expr, &mut ApplyNth::new(x)),
+                                    _ => todo!("Report RuntimeError::UnknownStrategy in meta rule application")
+                                }
+                            };
+                            (result, false)
+                        } else {
+                            todo!("Report runtime error about `Strategy` being expected to be a symbol");
+                        }
+                    } else {
+                        apply_to_subexprs(rule, expr, strategy)
+                    }
+                }
             }
         }
         apply_impl(self, expr, strategy).0
-    }
-}
-
-impl fmt::Display for Rule {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} = {}", self.head, self.body)
     }
 }
 
@@ -483,7 +557,6 @@ fn pattern_match(pattern: &Expr, value: &Expr) -> Option<Bindings> {
     }
 }
 
-#[derive(Default)]
 struct Context {
     rules: HashMap<String, Rule>,
     current_expr: Option<Expr>,
@@ -492,6 +565,17 @@ struct Context {
 }
 
 impl Context {
+    fn new() -> Self {
+        let mut rules = HashMap::new();
+        rules.insert("replace".to_string(), Rule::Replace);
+        Self {
+            rules,
+            current_expr: None,
+            shaping_history: Vec::new(),
+            quit: false,
+        }
+    }
+
     fn parse_applied_rule(
         &self,
         lexer: &mut Lexer<impl Iterator<Item = char>>,
@@ -500,18 +584,17 @@ impl Context {
         match token.kind {
             TokenKind::Reverse => {
                 let rule = self.parse_applied_rule(lexer)?;
-                Ok(Rule {
-                    loc: token.loc,
-                    head: rule.body,
-                    body: rule.head,
-                })
+                match rule {
+                    Rule::User { .. } => Ok(rule),
+                    Rule::Replace => Err(RuntimeError::IrreversibleRule(token.loc).into()),
+                }
             }
 
             TokenKind::Rule => {
                 let head = Expr::parse(lexer)?;
                 expect_token_kind(lexer, TokenKind::Equals)?;
                 let body = Expr::parse(lexer)?;
-                Ok(Rule {
+                Ok(Rule::User {
                     loc: token.loc,
                     head,
                     body,
@@ -539,17 +622,18 @@ impl Context {
             TokenKind::Rule => {
                 let name = expect_token_kind(lexer, TokenKind::Ident)?;
                 if let Some(existing_rule) = self.rules.get(&name.text) {
-                    return Err(RuntimeError::RuleAlreadyExists(
-                        name.text,
-                        name.loc,
-                        existing_rule.loc.clone(),
-                    )
-                    .into());
+                    let loc = match existing_rule {
+                        Rule::User { loc, .. } => Some(loc),
+                        Rule::Replace => None,
+                    };
+                    return Err(
+                        RuntimeError::RuleAlreadyExists(name.text, name.loc, loc.cloned()).into(),
+                    );
                 }
                 let head = Expr::parse(lexer)?;
                 expect_token_kind(lexer, TokenKind::Equals)?;
                 let body = Expr::parse(lexer)?;
-                let rule = Rule {
+                let rule = Rule::User {
                     loc: keyword.loc,
                     head,
                     body,
@@ -572,6 +656,7 @@ impl Context {
                     let rule = self.parse_applied_rule(lexer)?;
                     // todo!("Throw an error if not a single match for the rule was found")
 
+                    // @strategy-dup
                     let new_expr = match &strategy_name.text as &str {
                         "all" => rule.apply(&expr, &mut ApplyAll),
                         "first" => rule.apply(&expr, &mut ApplyNth::new(0)),
@@ -718,11 +803,15 @@ fn report_error_in_repl(err: &Error, prompt: &str) {
             eprint_repl_loc_cursor(prompt, &loc);
             eprintln!("ERROR: unknown rule application strategy '{}'", name);
         }
+        Error::Runtime(RuntimeError::IrreversibleRule(loc)) => {
+            eprint_repl_loc_cursor(prompt, &loc);
+            eprintln!("ERROR: irreversible rule");
+        }
     }
 }
 
 fn interpret_file(file_path: &str) {
-    let mut context = Context::default();
+    let mut context = Context::new();
     let source = fs::read_to_string(&file_path).unwrap();
     let mut lexer = Lexer::new(source.chars(), Some(file_path.to_string()));
     while !context.quit && lexer.peek_token().kind != TokenKind::End {
@@ -751,7 +840,9 @@ fn interpret_file(file_path: &str) {
                 }
                 Error::Runtime(RuntimeError::RuleAlreadyExists(name, new_loc, old_loc)) => {
                     eprintln!("{}: ERROR: redefinition of existing rule {}", new_loc, name);
-                    eprintln!("{}: Previous definition is located here", old_loc);
+                    if let Some(loc) = old_loc {
+                        eprintln!("{}: Previous definition is located here", loc);
+                    }
                 }
                 Error::Runtime(RuntimeError::RuleDoesNotExist(name, loc)) => {
                     eprintln!("{}: ERROR: rule {} does not exist", loc, name);
@@ -772,6 +863,9 @@ fn interpret_file(file_path: &str) {
                         loc, name
                     );
                 }
+                Error::Runtime(RuntimeError::IrreversibleRule(loc)) => {
+                    eprintln!("{}: ERROR: irreversible rule", loc);
+                }
             }
             std::process::exit(1);
         }
@@ -779,7 +873,7 @@ fn interpret_file(file_path: &str) {
 }
 
 fn start_repl() {
-    let mut context = Context::default();
+    let mut context = Context::new();
     let mut command = String::new();
 
     let default_prompt = "noq> ";
@@ -856,3 +950,4 @@ fn main() {
 // TODO: Custom arbitrary operators like in Haskell
 // TODO: Save session to file
 // TODO: Conditional matching of rules. Some sort of ability to combine several rules into one which tries all the provided rules sequentially and pickes the one that matches
+
