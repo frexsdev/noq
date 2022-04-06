@@ -585,7 +585,11 @@ impl Context {
             TokenKind::Reverse => {
                 let rule = self.parse_applied_rule(lexer)?;
                 match rule {
-                    Rule::User { .. } => Ok(rule),
+                    Rule::User { head, body, .. } => Ok(Rule::User {
+                        loc: token.loc,
+                        head: body,
+                        body: head,
+                    }),
                     Rule::Replace => Err(RuntimeError::IrreversibleRule(token.loc).into()),
                 }
             }
@@ -950,4 +954,3 @@ fn main() {
 // TODO: Custom arbitrary operators like in Haskell
 // TODO: Save session to file
 // TODO: Conditional matching of rules. Some sort of ability to combine several rules into one which tries all the provided rules sequentially and pickes the one that matches
-
