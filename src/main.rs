@@ -64,6 +64,7 @@ enum Expr {
 }
 
 #[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
 /// An error that happens during parsing the Noq source code
 enum SyntaxError {
     ExpectedToken(TokenKind, Token),
@@ -405,6 +406,7 @@ impl Strategy {
                 state: State::Cont,
             },
 
+            #[allow(clippy::comparison_chain)]
             Self::Nth { current, target } => {
                 if current == target {
                     Resolution {
