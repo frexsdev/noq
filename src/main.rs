@@ -167,7 +167,7 @@ impl AppliedRule {
                 name: token.text,
                 reversed: false,
             }),
-            _ => Err(SyntaxError::ExpectedAppliedRule(token).into()),
+            _ => Err(SyntaxError::ExpectedAppliedRule(token)),
         }
     }
 }
@@ -524,7 +524,7 @@ impl Rule {
                                 .expect("Variable `Expr` is present in the meta pattern");
                             let result = match Strategy::by_name(meta_strategy_name) {
                                 Some(mut strategy) => {
-                                    meta_rule.apply(&meta_expr, &mut strategy, apply_command_loc)
+                                    meta_rule.apply(meta_expr, &mut strategy, apply_command_loc)
                                 }
                                 None => Err(RuntimeError::UnknownStrategy(
                                     meta_strategy_name.to_string(),
@@ -571,7 +571,7 @@ fn substitute_bindings(bindings: &Bindings, expr: &Expr) -> Expr {
             let new_head = substitute_bindings(bindings, head);
             let mut new_args = Vec::new();
             for arg in args {
-                new_args.push(substitute_bindings(bindings, &arg))
+                new_args.push(substitute_bindings(bindings, arg))
             }
             Fun(Box::new(new_head), new_args)
         }
@@ -664,7 +664,7 @@ impl Command {
                     keyword.loc.clone(),
                     name.text,
                     Rule::User {
-                        loc: keyword.loc.clone(),
+                        loc: keyword.loc,
                         head,
                         body,
                     },
@@ -687,7 +687,7 @@ impl Command {
                 keyword.loc,
                 expect_token_kind(lexer, TokenKind::Ident)?.text,
             )),
-            _ => Err(SyntaxError::ExpectedCommand(keyword).into()),
+            _ => Err(SyntaxError::ExpectedCommand(keyword)),
         }
     }
 }
@@ -747,15 +747,17 @@ impl Context {
                         Rule::User { loc, .. } => Some(loc),
                         Rule::Replace => None,
                     };
-                    return Err(
-                        RuntimeError::RuleAlreadyExists(rule_name, rule_loc, loc.cloned()).into(),
-                    );
+                    return Err(RuntimeError::RuleAlreadyExists(
+                        rule_name,
+                        rule_loc,
+                        loc.cloned(),
+                    ));
                 }
                 self.rules.insert(rule_name, rule);
             }
             Command::StartShaping(loc, expr) => {
-                if let Some(_) = self.current_expr {
-                    return Err(RuntimeError::AlreadyShaping(loc).into());
+                if self.current_expr.is_some() {
+                    return Err(RuntimeError::AlreadyShaping(loc));
                 }
                 println!(" => {}", &expr);
                 self.current_expr = Some(expr);
@@ -770,10 +772,8 @@ impl Context {
 
                     // todo!("Throw an error if not a single match for the rule was found")
                     let new_expr = match Strategy::by_name(&strategy_name) {
-                        Some(mut strategy) => rule.apply(&expr, &mut strategy, &loc)?,
-                        None => {
-                            return Err(RuntimeError::UnknownStrategy(strategy_name, loc).into())
-                        }
+                        Some(mut strategy) => rule.apply(expr, &mut strategy, &loc)?,
+                        None => return Err(RuntimeError::UnknownStrategy(strategy_name, loc)),
                     };
                     println!(" => {}", &new_expr);
                     self.shaping_history.push(
@@ -782,27 +782,27 @@ impl Context {
                             .expect("current_expr must have something"),
                     );
                 } else {
-                    return Err(RuntimeError::NoShapingInPlace(loc).into());
+                    return Err(RuntimeError::NoShapingInPlace(loc));
                 }
             }
             Command::FinishShaping(loc) => {
-                if let Some(_) = &self.current_expr {
+                if self.current_expr.is_some() {
                     self.current_expr = None;
                     self.shaping_history.clear();
                 } else {
-                    return Err(RuntimeError::NoShapingInPlace(loc).into());
+                    return Err(RuntimeError::NoShapingInPlace(loc));
                 }
             }
             Command::UndoRule(loc) => {
-                if let Some(_) = &self.current_expr {
+                if self.current_expr.is_some() {
                     if let Some(previous_expr) = self.shaping_history.pop() {
                         println!(" => {}", &previous_expr);
                         self.current_expr.replace(previous_expr);
                     } else {
-                        return Err(RuntimeError::NoHistory(loc).into());
+                        return Err(RuntimeError::NoHistory(loc));
                     }
                 } else {
-                    return Err(RuntimeError::NoShapingInPlace(loc).into());
+                    return Err(RuntimeError::NoShapingInPlace(loc));
                 }
             }
             Command::Quit => {
@@ -812,7 +812,7 @@ impl Context {
                 if self.rules.contains_key(&name) {
                     self.rules.remove(&name);
                 } else {
-                    return Err(RuntimeError::RuleDoesNotExist(name, loc).into());
+                    return Err(RuntimeError::RuleDoesNotExist(name, loc));
                 }
             }
         }
@@ -876,38 +876,38 @@ fn report_error_in_repl(err: &Error, prompt: &str) {
             eprintln!("ERROR: expected command, but got {}", token.kind)
         }
         Error::Runtime(RuntimeError::RuleAlreadyExists(name, new_loc, _old_loc)) => {
-            eprint_repl_loc_cursor(prompt, &new_loc);
+            eprint_repl_loc_cursor(prompt, new_loc);
             eprintln!("ERROR: redefinition of existing rule {}", name);
         }
         Error::Runtime(RuntimeError::AlreadyShaping(loc)) => {
-            eprint_repl_loc_cursor(prompt, &loc);
+            eprint_repl_loc_cursor(prompt, loc);
             eprintln!(
                 "ERROR: already shaping an expression. Finish the current shaping with {} first.",
                 TokenKind::Done
             );
         }
         Error::Runtime(RuntimeError::NoShapingInPlace(loc)) => {
-            eprint_repl_loc_cursor(prompt, &loc);
+            eprint_repl_loc_cursor(prompt, loc);
             eprintln!("ERROR: no shaping in place.");
         }
         Error::Runtime(RuntimeError::RuleDoesNotExist(name, loc)) => {
-            eprint_repl_loc_cursor(prompt, &loc);
+            eprint_repl_loc_cursor(prompt, loc);
             eprintln!("ERROR: rule {} does not exist", name);
         }
         Error::Runtime(RuntimeError::NoHistory(loc)) => {
-            eprint_repl_loc_cursor(prompt, &loc);
+            eprint_repl_loc_cursor(prompt, loc);
             eprintln!("ERROR: no history");
         }
         Error::Runtime(RuntimeError::UnknownStrategy(name, loc)) => {
-            eprint_repl_loc_cursor(prompt, &loc);
+            eprint_repl_loc_cursor(prompt, loc);
             eprintln!("ERROR: unknown rule application strategy '{}'", name);
         }
         Error::Runtime(RuntimeError::IrreversibleRule(loc)) => {
-            eprint_repl_loc_cursor(prompt, &loc);
+            eprint_repl_loc_cursor(prompt, loc);
             eprintln!("ERROR: irreversible rule");
         }
         Error::Runtime(RuntimeError::StrategyIsNotSym(expr, loc)) => {
-            eprint_repl_loc_cursor(prompt, &loc);
+            eprint_repl_loc_cursor(prompt, loc);
             eprintln!(
                 "ERROR: strategy must be a symbol but got {} {}",
                 expr.human_name(),
@@ -1006,7 +1006,7 @@ fn start_repl() {
 
     while !context.quit {
         command.clear();
-        if let Some(_) = &context.current_expr {
+        if context.current_expr.is_some() {
             prompt = shaping_prompt;
         } else {
             prompt = default_prompt;
@@ -1027,18 +1027,16 @@ fn start_repl() {
 
 #[derive(Default)]
 struct Config {
-    program: String,
     file_path: Option<String>,
     debug_parser: bool,
 }
 
 impl Config {
     fn from_iter(args: &mut impl Iterator<Item = String>) -> Self {
+        args.next().expect("Program name should be always present");
         let mut config: Self = Default::default();
 
-        config.program = args.next().expect("Program name should be always present");
-
-        while let Some(arg) = args.next() {
+        for arg in args {
             match arg.as_str() {
                 "--debug-parser" => config.debug_parser = true,
                 other => {
