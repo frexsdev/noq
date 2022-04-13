@@ -11,7 +11,7 @@ if exists('b:current_syntax')
 endif
 
 " Language keywords
-syntax keyword noqKeywords rule shape apply done quit undo
+syntax keyword noqKeywords rule shape apply done quit undo load
 
 " Comments
 syntax region noqCommentLine start="#" end="$"
