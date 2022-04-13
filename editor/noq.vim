@@ -13,11 +13,15 @@ endif
 " Language keywords
 syntax keyword noqKeywords rule shape apply done quit undo load
 
+" String literals
+syntax region noqString start=/\v"/ skip=/\v\\./ end=/\v"/
+
 " Comments
 syntax region noqCommentLine start="#" end="$"
 
 " Set highlights
 highlight default link noqKeywords Keyword
+highlight default link noqString String
 highlight default link noqCommentLine Comment
 
 let b:current_syntax = 'noq'
