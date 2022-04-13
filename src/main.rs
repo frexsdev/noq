@@ -843,8 +843,25 @@ fn eprint_repl_loc_cursor(prompt: &str, loc: &Loc) {
     eprintln!("{:>width$}^", "", width = prompt.len() + loc.col - 1);
 }
 
+fn start_lexer_debugger() {
+    let prompt = "lexer> ";
+    let mut command = String::new();
+    loop {
+        command.clear();
+        print!("{}", prompt);
+        stdout().flush().unwrap();
+        stdin().read_line(&mut command).unwrap();
+        println!(
+            "Tokens: {:?}",
+            Lexer::new(command.trim().chars(), None)
+                .map(|t| (t.kind, t.text))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 fn start_parser_debugger() {
-    let prompt = "expr> ";
+    let prompt = "parser> ";
     let mut command = String::new();
     loop {
         command.clear();
@@ -861,7 +878,7 @@ fn start_parser_debugger() {
                     println!("  Debug:    {:?}", expr);
                     println!(
                         "  Unparsed: {:?}",
-                        lexer.map(|t| t.kind).collect::<Vec<_>>()
+                        lexer.map(|t| (t.kind, t.text)).collect::<Vec<_>>()
                     );
                 }
             }
@@ -1048,20 +1065,43 @@ fn start_repl() {
     }
 }
 
-#[derive(Default)]
+enum ReplMode {
+    Normal,
+    DebugParser,
+    DebugLexer,
+}
+
 struct Config {
     file_path: Option<String>,
-    debug_parser: bool,
+    mode: ReplMode,
 }
 
 impl Config {
     fn from_iter(args: &mut impl Iterator<Item = String>) -> Self {
         args.next().expect("Program name should be always present");
-        let mut config: Self = Default::default();
+        let mut config: Self = Self {
+            file_path: None,
+            mode: ReplMode::Normal,
+        };
 
-        for arg in args {
+        while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--debug-parser" => config.debug_parser = true,
+                "--debug" => {
+                    if let Some(mode_name) = args.next() {
+                        match mode_name.as_str() {
+                            "parser" => config.mode = ReplMode::DebugParser,
+                            "lexer" => config.mode = ReplMode::DebugLexer,
+                            _ => {
+                                eprintln!("ERROR: unknown debug mode {}", mode_name);
+                                std::process::exit(1)
+                            }
+                        }
+                    } else {
+                        eprintln!("ERROR: no argument is provided for flag {}", arg);
+                        std::process::exit(1)
+                    }
+                }
+
                 other => {
                     if config.file_path.is_none() {
                         config.file_path = Some(other.to_string())
@@ -1080,12 +1120,14 @@ impl Config {
 fn main() {
     let config = Config::from_iter(&mut env::args());
 
-    if config.debug_parser {
-        start_parser_debugger()
-    } else if let Some(file_path) = config.file_path {
-        interpret_file(&file_path)
+    if let Some(file_path) = &config.file_path {
+        interpret_file(file_path)
     } else {
-        start_repl()
+        match config.mode {
+            ReplMode::Normal => start_repl(),
+            ReplMode::DebugParser => start_parser_debugger(),
+            ReplMode::DebugLexer => start_lexer_debugger(),
+        }
     }
 }
 
@@ -1094,3 +1136,4 @@ fn main() {
 // TODO: Custom arbitrary operators like in Haskell
 // TODO: Save session to file
 // TODO: Conditional matching of rules. Some sort of ability to combine several rules into one which tries all the provided rules sequentially and pickes the one that matches
+
