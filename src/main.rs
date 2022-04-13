@@ -18,6 +18,7 @@ enum Op {
     Mul,
     Div,
     Pow,
+    Mod,
 }
 
 impl Op {
@@ -30,6 +31,7 @@ impl Op {
             TokenKind::Asterisk => Some(Op::Mul),
             TokenKind::Slash => Some(Op::Div),
             TokenKind::Caret => Some(Op::Pow),
+            TokenKind::Percent => Some(Op::Mod),
             _ => None,
         }
     }
@@ -38,7 +40,7 @@ impl Op {
         use Op::*;
         match self {
             Add | Sub => 0,
-            Mul | Div => 1,
+            Mul | Div | Mod => 1,
             Pow => 2,
         }
     }
@@ -51,6 +53,7 @@ impl fmt::Display for Op {
             Op::Sub => write!(f, "-"),
             Op::Mul => write!(f, "*"),
             Op::Div => write!(f, "/"),
+            Op::Mod => write!(f, "%"),
             Op::Pow => write!(f, "^"),
         }
     }
@@ -1196,3 +1199,4 @@ fn main() {
 // TODO: Custom arbitrary operators like in Haskell
 // TODO: Save session to file
 // TODO: Conditional matching of rules. Some sort of ability to combine several rules into one which tries all the provided rules sequentially and pickes the one that matches
+
