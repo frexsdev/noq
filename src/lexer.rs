@@ -218,6 +218,7 @@ impl<Chars: Iterator<Item = char>> Lexer<Chars> {
                     },
                     ':' => {
                         if self.chars.next_if(|x| *x == ':').is_some() {
+                            self.cnum += 1;
                             text.push(':');
                             Token {
                                 kind: TokenKind::DoubleColon,
