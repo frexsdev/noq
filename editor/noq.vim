@@ -11,17 +11,29 @@ if exists('b:current_syntax')
 endif
 
 " Language keywords
-syntax keyword noqKeywords rule shape apply done quit undo load
+syntax keyword noqKeywords all
+
+" Language functions
+syntax keyword noqFunctions delete undo delete quit use deep
 
 " String literals
 syntax region noqString start=/\v"/ skip=/\v\\./ end=/\v"/
 
+" Number literals
+syntax match noqNumber "\v<\d+>"
+
 " Comments
 syntax region noqCommentLine start="#" end="$"
 
+" Operators
+syntax match noqOperators "+\|-\|*\|\^\|/\|%\|=\|::\|!\|@!"
+
 " Set highlights
-highlight default link noqKeywords Keyword
-highlight default link noqString String
+highlight default link noqKeywords    Keyword
+highlight default link noqFunctions   Function 
+highlight default link noqOperators   Keyword
+highlight default link noqString      String
+highlight default link noqNumber      Number
 highlight default link noqCommentLine Comment
 
 let b:current_syntax = 'noq'
