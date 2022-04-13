@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::fs;
+use std::io;
 use std::io::Write;
 use std::io::{stdin, stdout};
 
@@ -85,6 +86,7 @@ enum RuntimeError {
     IrreversibleRule(Loc),
     StrategyIsNotSym(Expr, Loc),
     NoMatch(Loc),
+    CouldNotLoadFile(Loc, io::Error),
 }
 
 #[derive(Debug)]
@@ -668,12 +670,17 @@ enum Command {
     UndoRule(Loc),
     Quit,
     DeleteRule(Loc, String),
+    Load(Loc, String),
 }
 
 impl Command {
     fn parse(lexer: &mut Lexer<impl Iterator<Item = char>>) -> Result<Command, SyntaxError> {
         let keyword = lexer.next_token();
         match keyword.kind {
+            TokenKind::Load => {
+                let token = expect_token_kind(lexer, TokenKind::Str)?;
+                Ok(Self::Load(token.loc, token.text))
+            }
             TokenKind::Rule => {
                 let name = expect_token_kind(lexer, TokenKind::Ident)?;
                 let head = Expr::parse(lexer)?;
@@ -758,25 +765,34 @@ impl Context {
         }
     }
 
-    fn process_command(&mut self, command: Command) -> Result<(), RuntimeError> {
+    fn process_command(&mut self, command: Command) -> Result<(), Error> {
         match command {
+            Command::Load(loc, file_path) => {
+                let source = match fs::read_to_string(&file_path) {
+                    Ok(source) => source,
+                    Err(err) => return Err(RuntimeError::CouldNotLoadFile(loc, err).into()),
+                };
+                let mut lexer = Lexer::new(source.chars(), Some(file_path));
+                while lexer.peek_token().kind != TokenKind::End {
+                    self.process_command(Command::parse(&mut lexer)?)?
+                }
+            }
             Command::DefineRule(rule_loc, rule_name, rule) => {
                 if let Some(existing_rule) = self.rules.get(&rule_name) {
                     let loc = match existing_rule {
                         Rule::User { loc, .. } => Some(loc),
                         Rule::Replace => None,
                     };
-                    return Err(RuntimeError::RuleAlreadyExists(
-                        rule_name,
-                        rule_loc,
-                        loc.cloned(),
-                    ));
+                    return Err(
+                        RuntimeError::RuleAlreadyExists(rule_name, rule_loc, loc.cloned()).into(),
+                    );
                 }
+                println!("defined rule `{}`", &rule_name);
                 self.rules.insert(rule_name, rule);
             }
             Command::StartShaping(loc, expr) => {
                 if self.current_expr.is_some() {
-                    return Err(RuntimeError::AlreadyShaping(loc));
+                    return Err(RuntimeError::AlreadyShaping(loc).into());
                 }
                 println!(" => {}", &expr);
                 self.current_expr = Some(expr);
@@ -791,7 +807,9 @@ impl Context {
 
                     let new_expr = match Strategy::by_name(&strategy_name) {
                         Some(strategy) => rule.apply(expr, &strategy, &loc)?,
-                        None => return Err(RuntimeError::UnknownStrategy(strategy_name, loc)),
+                        None => {
+                            return Err(RuntimeError::UnknownStrategy(strategy_name, loc).into())
+                        }
                     };
                     println!(" => {}", &new_expr);
                     self.shaping_history.push(
@@ -800,7 +818,7 @@ impl Context {
                             .expect("current_expr must have something"),
                     );
                 } else {
-                    return Err(RuntimeError::NoShapingInPlace(loc));
+                    return Err(RuntimeError::NoShapingInPlace(loc).into());
                 }
             }
             Command::FinishShaping(loc) => {
@@ -808,7 +826,7 @@ impl Context {
                     self.current_expr = None;
                     self.shaping_history.clear();
                 } else {
-                    return Err(RuntimeError::NoShapingInPlace(loc));
+                    return Err(RuntimeError::NoShapingInPlace(loc).into());
                 }
             }
             Command::UndoRule(loc) => {
@@ -817,10 +835,10 @@ impl Context {
                         println!(" => {}", &previous_expr);
                         self.current_expr.replace(previous_expr);
                     } else {
-                        return Err(RuntimeError::NoHistory(loc));
+                        return Err(RuntimeError::NoHistory(loc).into());
                     }
                 } else {
-                    return Err(RuntimeError::NoShapingInPlace(loc));
+                    return Err(RuntimeError::NoShapingInPlace(loc).into());
                 }
             }
             Command::Quit => {
@@ -830,7 +848,7 @@ impl Context {
                 if self.rules.contains_key(&name) {
                     self.rules.remove(&name);
                 } else {
-                    return Err(RuntimeError::RuleDoesNotExist(name, loc));
+                    return Err(RuntimeError::RuleDoesNotExist(name, loc).into());
                 }
             }
         }
@@ -950,6 +968,9 @@ fn report_error_in_repl(err: &Error, prompt: &str) {
             RuntimeError::NoMatch(_loc) => {
                 eprintln!("ERROR: no match found");
             }
+            RuntimeError::CouldNotLoadFile(_loc, err) => {
+                eprintln!("ERROR: could not load file {:?}", err)
+            }
         },
     }
 }
@@ -1029,6 +1050,9 @@ fn interpret_file(file_path: &str) {
                 }
                 Error::Runtime(RuntimeError::NoMatch(loc)) => {
                     eprintln!("{}: ERROR: no match", loc);
+                }
+                Error::Runtime(RuntimeError::CouldNotLoadFile(loc, err)) => {
+                    eprintln!("{}: ERROR: could not load file {:?}", loc, err);
                 }
             }
             std::process::exit(1);
@@ -1131,9 +1155,7 @@ fn main() {
     }
 }
 
-// TODO: Load rules from files
 // TODO: Define shapes as rules
 // TODO: Custom arbitrary operators like in Haskell
 // TODO: Save session to file
 // TODO: Conditional matching of rules. Some sort of ability to combine several rules into one which tries all the provided rules sequentially and pickes the one that matches
-
