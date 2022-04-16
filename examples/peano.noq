@@ -21,4 +21,3 @@ load "./std/std.noq"
   all | sub
   all | sub_id
 }
-
