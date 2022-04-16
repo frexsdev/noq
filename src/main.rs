@@ -89,6 +89,7 @@ enum RuntimeError {
     StrategyIsNotSym(Expr, Loc),
     NoMatch(Loc),
     CouldNotLoadFile(Loc, io::Error),
+    CouldNotSaveFile(Loc, io::Error),
 }
 
 #[derive(Debug)]
@@ -109,6 +110,7 @@ impl From<RuntimeError> for Error {
     }
 }
 
+#[derive(Clone)]
 enum AppliedRule {
     ByName {
         loc: Loc,
@@ -660,6 +662,7 @@ fn expect_token_kind(
     }
 }
 
+#[derive(Clone)]
 enum Command {
     /// Define rule
     ///
@@ -747,6 +750,14 @@ enum Command {
     ///   ...
     /// ```
     Load(Loc, String),
+    /// Save file
+    ///
+    /// ```noq
+    /// ...
+    ///
+    /// save "session.noq" # <- the save command
+    /// ```
+    Save(Loc, String),
 }
 
 impl Command {
@@ -757,6 +768,11 @@ impl Command {
                 lexer.next_token();
                 let token = expect_token_kind(lexer, TokenKind::Str)?;
                 Ok(Self::Load(token.loc, token.text))
+            }
+            TokenKind::Save => {
+                lexer.next_token();
+                let token = expect_token_kind(lexer, TokenKind::Str)?;
+                Ok(Self::Save(token.loc, token.text))
             }
             TokenKind::CloseCurly => {
                 let keyword = lexer.next_token();
@@ -861,7 +877,12 @@ impl ShapingFrame {
 struct Context {
     rules: HashMap<String, Rule>,
     shaping_stack: Vec<ShapingFrame>,
+    history: Vec<Command>,
     quit: bool,
+}
+
+fn pad(sink: &mut impl Write, width: usize) -> io::Result<()> {
+    write!(sink, "{:>width$}", "")
 }
 
 impl Context {
@@ -873,11 +894,85 @@ impl Context {
             rules,
             shaping_stack: Default::default(),
             quit: false,
+            history: Default::default(),
         }
     }
 
+    fn save_history(&self, file_path: &str) -> Result<(), io::Error> {
+        let mut sink = fs::File::create(file_path)?;
+        let mut indent = 0;
+        for command in self.history.iter() {
+            match command {
+                Command::DefineRule(_, name, rule) => match rule {
+                    Rule::User { head, body, .. } => {
+                        pad(&mut sink, indent * 2)?;
+                        writeln!(sink, "{} :: {} = {}", name, head, body)?
+                    }
+                    Rule::Replace => {
+                        unreachable!("There is no way for the user to create such rule")
+                    }
+                },
+                Command::DefineRuleViaShaping { name, expr } => {
+                    pad(&mut sink, indent * 2)?;
+                    writeln!(sink, "{} :: {} {{", name, expr)?;
+                    indent += 1
+                }
+                Command::StartShaping(_, expr) => {
+                    pad(&mut sink, indent * 2)?;
+                    writeln!(sink, "{} {{", expr)?;
+                    indent += 1
+                }
+                Command::ApplyRule {
+                    strategy_name,
+                    applied_rule,
+                    ..
+                } => {
+                    pad(&mut sink, indent * 2)?;
+                    match applied_rule {
+                        AppliedRule::ByName { name, reversed, .. } => {
+                            if *reversed {
+                                writeln!(sink, "{} | ! {}", strategy_name, name)?
+                            } else {
+                                writeln!(sink, "{} | {}", strategy_name, name)?
+                            }
+                        }
+                        AppliedRule::Anonymous { head, body, .. } => {
+                            writeln!(sink, "{} | :: {} = {}", strategy_name, head, body)?
+                        }
+                    }
+                }
+                Command::FinishShaping(_) => {
+                    indent -= 1;
+                    pad(&mut sink, indent * 2)?;
+                    writeln!(sink, "}}")?
+                }
+                Command::UndoRule(_) => {
+                    pad(&mut sink, indent * 2)?;
+                    writeln!(sink, "undo")?
+                }
+                Command::Quit => {
+                    pad(&mut sink, indent * 2)?;
+                    writeln!(sink, "quit")?
+                }
+                Command::DeleteRule(_, name) => {
+                    pad(&mut sink, indent * 2)?;
+                    writeln!(sink, "delete {}", name)?
+                }
+                Command::Load(_, name) => {
+                    pad(&mut sink, indent * 2)?;
+                    writeln!(sink, "load {}", name)?
+                }
+                Command::Save(_, name) => {
+                    pad(&mut sink, indent * 2)?;
+                    writeln!(sink, "save {}", name)?
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn process_command(&mut self, command: Command) -> Result<(), Error> {
-        match command {
+        match command.clone() {
             Command::Load(loc, file_path) => {
                 let source = match fs::read_to_string(&file_path) {
                     Ok(source) => source,
@@ -999,7 +1094,12 @@ impl Context {
                     return Err(RuntimeError::RuleDoesNotExist(name, loc).into());
                 }
             }
+            Command::Save(loc, file_path) => {
+                self.save_history(&file_path)
+                    .map_err(|err| RuntimeError::CouldNotSaveFile(loc.clone(), err))?;
+            }
         }
+        self.history.push(command);
         Ok(())
     }
 }
@@ -1116,6 +1216,9 @@ fn report_error_in_repl(err: &Error, prompt: &str) {
             RuntimeError::CouldNotLoadFile(_loc, err) => {
                 eprintln!("ERROR: could not load file {:?}", err)
             }
+            RuntimeError::CouldNotSaveFile(_loc, err) => {
+                eprintln!("ERROR: could not save file {:?}", err)
+            }
         },
     }
 }
@@ -1194,6 +1297,9 @@ fn interpret_file(file_path: &str) {
                 }
                 Error::Runtime(RuntimeError::CouldNotLoadFile(loc, err)) => {
                     eprintln!("{}: ERROR: could not load file {:?}", loc, err);
+                }
+                Error::Runtime(RuntimeError::CouldNotSaveFile(loc, err)) => {
+                    eprintln!("{}: ERROR: could not save file {:?}", loc, err);
                 }
             }
             std::process::exit(1);
@@ -1300,5 +1406,4 @@ fn main() {
 }
 
 // TODO: Custom arbitrary operators like in Haskell
-// TODO: Save session to file
-// TODO: Conditional matching of rules. Some sort of ability to combine several rules into one which tries all the provided rules sequentially and pickes the one that matches
+// TODO: Autosuggestions in REPL
