@@ -1160,6 +1160,8 @@ fn start_new_cool_repl() {
         Ok((head, body))
     }
 
+    // TODO: check if the stdin is tty
+    // If it is not maybe switch to the old/simplified REPL
     let prompt = "new> ";
     let mut stdout = stdout().into_raw_mode().unwrap();
     let stdin = stdin();
