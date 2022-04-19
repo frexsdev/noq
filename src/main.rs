@@ -904,7 +904,6 @@ impl Context {
         }
     }
 
-    // TODO: save history generates old syntax
     fn save_history(&self, file_path: &str) -> Result<(), io::Error> {
         let mut sink = fs::File::create(file_path)?;
         let mut indent = 0;
@@ -938,13 +937,13 @@ impl Context {
                     match applied_rule {
                         AppliedRule::ByName { name, reversed, .. } => {
                             if *reversed {
-                                writeln!(sink, "{} | ! {}", strategy_name, name)?
+                                writeln!(sink, "{} |! {}", name, strategy_name)?
                             } else {
-                                writeln!(sink, "{} | {}", strategy_name, name)?
+                                writeln!(sink, "{} | {}", name, strategy_name)?
                             }
                         }
                         AppliedRule::Anonymous { head, body, .. } => {
-                            writeln!(sink, "{} | :: {} = {}", strategy_name, head, body)?
+                            writeln!(sink, "{} = {} | {}", head, body, strategy_name)?
                         }
                     }
                 }
