@@ -53,6 +53,7 @@ impl fmt::Display for SyntaxError {
     }
 }
 
+// TODO: unary minus
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Op {
     Add,
@@ -61,6 +62,7 @@ pub enum Op {
     Div,
     Pow,
     Mod,
+    // TODO: use `=` instead of `==`, but for the current use of `=` use something else (for instance `=>`)
     Eql,
 }
 
