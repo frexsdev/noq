@@ -1487,7 +1487,7 @@ impl<'a> fmt::Display for HighlightedSubexpr<'a> {
     }
 }
 
-fn start_new_repl() {
+fn start_new_cool_repl() {
     fn parse_match(
         lexer: &mut Lexer<impl Iterator<Item = char>>,
     ) -> Result<(Expr, Expr), SyntaxError> {
@@ -1557,7 +1557,7 @@ fn main() {
     } else {
         match config.mode {
             ReplMode::Normal => start_repl(),
-            ReplMode::DebugNew => start_new_repl(),
+            ReplMode::DebugNew => start_new_cool_repl(),
             ReplMode::DebugParser => start_parser_debugger(),
             ReplMode::DebugLexer => start_lexer_debugger(),
         }
